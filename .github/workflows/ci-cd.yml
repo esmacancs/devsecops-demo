@@ -189,19 +189,6 @@ jobs:
             <p>Please find the vulnerability scan report attached.</p>
             <p>Regards,<br/>GitHub CI/CD Bot</p>
           attachments: trivy-report.txt
-      - name: Test email sending
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: ${{ secrets.EMAIL_HOST }}
-          server_port: 2525
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "✅ Email Test from GitHub Actions"
-          to: csharma@omandatapark.com
-          from: GitHub CI <${{ secrets.EMAIL_USERNAME }}>
-          content_type: text/plain
-          body: |
-            This is a test email sent from GitHub Actions.
 
       - name: Push Docker image
         uses: docker/build-push-action@v5
