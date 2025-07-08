@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
     paths-ignore:
-      - 'kubernetes/deployment.yaml'  # Ignore changes to this file to prevent loops
+      - 'kubernetes/deployment.yaml'  # Ignore to prevent deployment loop
   pull_request:
     branches: [ main ]
 
@@ -47,30 +47,31 @@ jobs:
       - name: Run ESLint
         run: npm run lint
 
-    sonar:
-      name: SonarQube Analysis
-      runs-on: self-hosted
-      needs: [test, lint]
-      steps:
-        - name: Checkout code
-          uses: actions/checkout@v4
+  sonar:
+    name: SonarQube Analysis
+    runs-on: self-hosted
+    needs: [test, lint]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-        - name: Setup Node.js
-          uses: actions/setup-node@v4
-          with:
-            node-version: '20'
-            cache: 'npm'
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
 
-        - name: Install dependencies
-          run: npm ci
+      - name: Install dependencies
+        run: npm ci
 
-        - name: SonarQube Scan
-          uses: sonarsource/sonarqube-scan-action@v2
-          with:
-            projectBaseDir: .
+      - name: SonarQube Scan
+        uses: sonarsource/sonarqube-scan-action@v2
+        with:
+          projectBaseDir: .
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -189,13 +190,8 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           REGISTRY: ghcr.io
         run: |
-          # Define the new image with tag
           NEW_IMAGE="${REGISTRY}/${GITHUB_REPOSITORY}:${IMAGE_TAG}"
-          
-          # Update the deployment file directly
           sed -i "s|image: ${REGISTRY}/.*|image: ${NEW_IMAGE}|g" kubernetes/deployment.yaml
-          
-          # Verify the change
           echo "Updated deployment to use image: ${NEW_IMAGE}"
           grep -A 1 "image:" kubernetes/deployment.yaml
       
