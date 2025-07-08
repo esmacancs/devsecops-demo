@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
     paths-ignore:
-      - 'kubernetes/deployment.yaml'  # Ignore to prevent deployment loop
+      - 'kubernetes/deployment.yaml'  # Prevent deployment loop
   pull_request:
     branches: [ main ]
 
@@ -110,23 +110,23 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           name: build-artifacts
           path: dist/
-      
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      
+
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.TOKEN }}
-      
+
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v5
@@ -136,7 +136,7 @@ jobs:
             type=sha,format=long
             type=ref,event=branch
             latest
-      
+
       - name: Build Docker image
         uses: docker/build-push-action@v5
         with:
@@ -145,17 +145,51 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           load: true
-      
+
       - name: Run Trivy vulnerability scanner
+        id: trivy
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
           format: 'table'
-          exit-code: '1'
+          output: trivy-report.txt
+          exit-code: 1  # Fail if HIGH/CRITICAL are found
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
-      
+        continue-on-error: true  # Prevent job failure, allow email + artifact upload
+
+      - name: Upload Trivy report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-scan-report
+          path: trivy-report.txt
+
+      - name: Send Trivy email if vulnerabilities found
+        if: steps.trivy.outcome == 'failure'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "❗ Vulnerabilities Found: Trivy Scan for ${{ github.repository }}"
+          to: csharma@omandatapark.com
+          from: Trivy Scanner <${{ secrets.EMAIL_USERNAME }}>
+          content_type: text/html
+          body: |
+            <p>Hello,</p>
+            <p><strong>Trivy has detected vulnerabilities</strong> in the latest Docker image:</p>
+            <ul>
+              <li><strong>Repository:</strong> ${{ github.repository }}</li>
+              <li><strong>Image:</strong> ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}</li>
+              <li><strong>Commit:</strong> ${{ github.sha }}</li>
+              <li><strong>Triggered by:</strong> ${{ github.actor }}</li>
+            </ul>
+            <p>Please find the vulnerability scan report attached.</p>
+            <p>Regards,<br/>GitHub CI/CD Bot</p>
+          attachments: trivy-report.txt
+
       - name: Push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -163,7 +197,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-      
+
       - name: Set image tag output
         id: set_output
         run: echo "image_tag=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
@@ -178,12 +212,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.TOKEN }}
-      
+
       - name: Setup Git config
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-      
+
       - name: Update Kubernetes deployment file
         env:
           IMAGE_TAG: sha-${{ github.sha }}
@@ -194,7 +228,7 @@ jobs:
           sed -i "s|image: ${REGISTRY}/.*|image: ${NEW_IMAGE}|g" kubernetes/deployment.yaml
           echo "Updated deployment to use image: ${NEW_IMAGE}"
           grep -A 1 "image:" kubernetes/deployment.yaml
-      
+
       - name: Commit and push changes
         run: |
           git add kubernetes/deployment.yaml
